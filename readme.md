@@ -1,142 +1,74 @@
-# Problem Statement
+# CancerCareAI: AI-Powered Patient Data Extraction
 
-## Objective
-You have been provided with a set of Electronic Health Record (EHR) notes for patients diagnosed with various types of cancer. Your goal is to:
+This project implements an AI-powered system for extracting cancer-related information from patient Electronic Health Record (EHR) notes. It addresses two main tasks:
 
-1. Retrieve relevant chunks of text from these EHR documents based on a user query (e.g. “Has the patient undergone chemotherapy?”).
-2. Extract structured medical data focusing on:
-   - **Cancer diagnosis** (type, date, histology, stage).
-   - **Cancer-related medications** prescribed to the patient (drug name, start/end dates, intent).
+1.  **Information Retrieval:** Retrieving relevant text chunks based on a user query.
+2.  **Medical Data Extraction:** Extracting structured data (diagnosis and medication details) into a JSON format.
 
-## Dataset
-The dataset (in JSON format) includes multiple EHR notes per patient. Each note is an object with the following structure:
+**[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/13bzx0MyOojzwq6f8PcUOp5o_LvXt6B1E?usp=sharing)** 
 
-```python
-patient_data = [
-    {
-        "docDate": "MM-DD-YYYY",  # The date of the document in MM-DD-YYYY format.
-        "docTitle": "Some Title",  # A short title describing the type of note (e.g., “Pathology Report,” “Progress Note,” “Chemotherapy Cycle #2”).
-        "docText": "Text content of the EHR Note",  # The full text of the EHR note, typically 400–500 words, containing relevant clinical information.
-    },
-    # … more documents for the same patient …
-]
-```
+## Project Structure
 
----
+The project is implemented in Python and is structured as a single, well-commented Jupyter Notebook (`CancerCareAI.ipynb`).   The notebook is divided into four main sections:
+
+1.  **Project Setup and Data Loading:** Installs dependencies, imports libraries, and loads data from a GitHub repository.
+2.  **Task 1 - Information Retrieval (Pipeline):** Implements a combined keyword-based (BM25) and semantic search (Sentence Transformers, CrossEncoder) pipeline for retrieving relevant sentences.
+3.  **Task 2 - Medical Data Extraction (LLM-based Pipeline):** Uses a quantized Large Language Model (Qwen/Qwen2.5-7B-Instruct-1M) to extract structured data in JSON format.  Includes robust error handling for JSON parsing.
+4.  **Putting it all Together (Main Execution Block):** Provides an interactive interface for the user to select a patient, choose a mode (information retrieval or data extraction), and view the results.
 
 ## Task 1: Information Retrieval
-Prepare a pipeline to extract relevant information chunks/sentences from the EHR data for a given query.
 
-An approach could involve:
-1. Breaking down the data into semantically meaningful chunks.
-2. Using a text-embedding model to calculate similarity between the query and chunks from EHR notes.
-3. Re-ranking models to extract relevant chunks.
+**Approach:**
 
-### Example:
-**Input Query:** “Has the patient undergone chemotherapy?”
+The information retrieval task uses a multi-stage approach to combine the strengths of different retrieval methods:
 
-**Output Retrieved Chunks:**
-1. “On her follow-up on 02/15/2022 post her first cycle of chemotherapy, her response to Doxorubicin and Cyclophosphamide was evaluated.”
-2. “A follow-up mammogram conducted on 02/15/2022 showed reduced tumor size in the left breast, indicating a positive response to chemotherapy.”
-3. **Chemotherapy Cycle 3 Follow-up (05/05/2022)**
-   - Assessing response to Docetaxel and Trastuzumab
-   - Vital Signs: Stable
-   - The patient reported manageable side effects, including mild fatigue and neuropathy.
+1.  **Sentence Tokenization:** Input documents are split into individual sentences using `nltk.sent_tokenize`.  This provides a more granular level of retrieval compared to using entire documents.
+2.  **BM25 Ranking:**  The `rank_bm25` library is used to perform keyword-based ranking.  This is effective for finding sentences that contain the exact query terms.
+3.  **Semantic Search:**  The `sentence-transformers` library is used with the "all-MiniLM-L6-v2" model to find sentences that are semantically similar to the query, even if they don't share exact keywords.
+4.  **Filtering:** The top *N* results from both BM25 and semantic search are combined.  Irrelevant/administrative sentences are removed using regular expression based filtering.
+5.  **Cross-Encoder Reranking:** A CrossEncoder model ("cross-encoder/ms-marco-MiniLM-L-6-v2") is used to rerank the combined results.  CrossEncoders are more accurate than the Bi-Encoders used in the initial semantic search.
+6.  **Score Normalization and Combination:** Scores from BM25, semantic search, and the CrossEncoder are normalized to a 0-1 range and combined using weighted averaging. This allows for tuning the influence of each method.
 
-**Note:** Any approach can be used (keyword matching, semantic embeddings, retrieval systems, etc.).
-
----
+**[YouTube Video Demo (Task 1)](https://youtu.be/_N7l-hswtaU)**
 
 ## Task 2: Medical Data Extraction
-Develop an **LLM-based pipeline** to extract structured medical information from EHR notes, focusing on cancer diagnoses and medications.
 
-### Why Is This Important?
-EHRs often contain scattered information across multiple documents and dates. Structuring this data helps healthcare professionals:
+**Approach:**
 
-1. Quickly review a patient’s cancer diagnosis details and staging.
-2. Track treatments and medications over time.
-3. Use structured data for clinical decision support (e.g., trial matching, treatment monitoring).
+The medical data extraction task leverages the Qwen/Qwen2.5-7B-Instruct-1M large language model (LLM) with 4-bit quantization to extract structured data.
 
-### Task 2.1: Cancer Diagnosis Characteristics
-Extract key diagnosis details:
+1.  **Model Loading:** The Qwen model and tokenizer are loaded using the `transformers` library.  4-bit quantization (using `bitsandbytes`) is applied to reduce memory usage, enabling the model to run on a T4 GPU in Google Colab.  If a GPU is not available, the model loading is skipped.
+2.  **Prompt Engineering:** A carefully designed prompt is constructed to instruct the LLM to extract specific data elements (diagnosis characteristics and cancer-related medications) and output them in a strict JSON format.  The prompt includes:
+    *   Clear instructions on the LLM's role and task.
+    *   An example input and expected output.
+    *   Specific guidelines for handling missing data (using `null`).
+3.  **Inference:** The LLM generates text based on the prompt and input passage.  Inference parameters are set for deterministic output (greedy decoding, low temperature, top-k sampling).
+4.  **JSON Extraction and Error Handling:**  The generated text is parsed to extract the JSON object.  Robust error handling is implemented to deal with potential `JSONDecodeError` exceptions, and includes a fallback mechanism to attempt to recover partial JSON outputs. A regular expression based approach is used to first find the JSON code block and then parse.
+5. **Data Aggregation:** The `merge_extractions` function handles combining and deduplicating data extracted from multiple documents for the same patient. It prioritizes earlier diagnosis dates and combines medication information.
 
-- **Primary Cancer Condition** (e.g., Breast Cancer, Lung Cancer).
-- **Diagnosis Date** (Earliest date confirming the cancer).
-- **Histology** (Microscopic classification, e.g., Adenocarcinoma, Squamous Cell Carcinoma).
-- **Stage** (TNM classification and overall group stage).
+**[YouTube Video Demo (Task 2)](https://youtu.be/TzEx-vvSADw)**
 
-### Task 2.2: Cancer-Related Medications
-Extract details about medications given specifically for cancer treatment:
+## Running the Code
 
-- **Medication Name** (e.g., Doxorubicin, Trastuzumab).
-- **Start Date** (Earliest mention of medication initiation).
-- **End Date** (If available; otherwise leave blank/null).
-- **Intent** (Reason for prescription, e.g., Adjuvant therapy post-surgery).
+1.  **Open in Colab:** The recommended way to run the code is in Google Colab. Use the Colab link provided.
+2.  **Runtime:** Ensure you are using a T4 GPU runtime (Runtime -> Change runtime type). This is *required* for the 4-bit quantization of the Qwen model. If bitsandbytes issues occur, try restarting the runtime.
+3.  **Run All:** Execute all cells in the notebook (Runtime -> Run all).
+4.  **Interactive Prompts:** The script will prompt you to:
+    *   Select a patient.
+    *   Choose a mode (1 for Information Retrieval, 2 for Medical Data Extraction).
+    *   Enter a query (for Mode 1).
 
----
+## Dependencies
 
-## Expected Output Format
-The final pipeline should return a **structured JSON** output:
+*   sentence-transformers
+*   rank\_bm25
+*   pandas
+*   nltk
+*   bitsandbytes
+*   accelerate
+*   optimum
+*   transformers
+*   torch
+*   requests
 
-```json
-{
-    "diagnosis_characteristics": [
-        {
-            "primary_cancer_condition": "str",
-            "diagnosis_date": "MM-DD-YYYY",
-            "histology": ["str"],
-            "stage": {
-                "T": "str",
-                "N": "str",
-                "M": "str",
-                "group_stage": "str"
-            }
-        }
-    ],
-    "cancer_related_medications": [
-        {
-            "medication_name": "str",
-            "start_date": "MM-DD-YYYY",
-            "end_date": "MM-DD-YYYY",
-            "intent": "str"
-        }
-    ]
-}
-```
-
----
-
-## Hints & Modeling
-1. **Use Task 1 pipeline** to locate relevant passages before extracting fields.
-2. **LLM-based extraction**: Prompt the model with specific instructions to parse text into structured JSON.
-3. **Handling missing data**: If a field (e.g., end date) is unavailable, leave it empty.
-
----
-
-## Example LLM Setup (Qwen1.5-7B-Chat with 4-bit Quantization)
-Use **Qwen1.5-7B-Chat** in Google Colab with 4-bit quantization:
-
-```python
-!pip install -q bitsandbytes accelerate optimum
-
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-
-device = "cuda"
-
-quantization_config = BitsAndBytesConfig(
-    load_in_4bit=True,
-    bnb_4bit_quant_type="nf4",
-    bnb_4bit_compute_dtype=torch.float16,
-)
-
-model = AutoModelForCausalLM.from_pretrained(
-    "Qwen/Qwen1.5-7B-Chat",
-    use_safetensors=True,
-    low_cpu_mem_usage=True,
-    quantization_config=quantization_config,
-    device_map=device,
-)
-
-tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen1.5-7B-Chat")
-```
+These dependencies are installed at the beginning of the `CancerCareAI.ipynb` notebook using `pip`.
