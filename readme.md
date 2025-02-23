@@ -7,6 +7,10 @@ This project implements an AI-powered system for extracting cancer-related infor
 
 **[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/13bzx0MyOojzwq6f8PcUOp5o_LvXt6B1E?usp=sharing)** 
 
+## Flowchart
+
+![Flowchart](./flowchart/CancerCareAI_Flowchart.jpg)
+
 ## Project Structure
 
 The project is implemented in Python and is structured as a single, well-commented Jupyter Notebook (`CancerCareAI.ipynb`).   The notebook is divided into four main sections:
